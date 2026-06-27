@@ -99,7 +99,22 @@ def handle_ussd_request(session_id: str, phone_number: str, text: str) -> str:
         return end_msg("Thank you for using Farmer's Companion. Goodbye!", lang)
 
     # ── 7. Change language ───────────────────────────────────────────
+    # When the user picks "Change Language" from the main menu,
+    # show the language selection screen.
+    # On the NEXT hop, Africa's Talking accumulates the new choice
+    # into sub[1].  We must handle that here — otherwise the router
+    # loops back to action='7' forever.
     if action == '7':
+        if len(sub) >= 2 and sub[1] in LANGUAGE_MAP:
+            # User has already picked a new language on this hop
+            new_lang = LANGUAGE_MAP[sub[1]]
+            UserLanguagePreference.set_language(phone_number, new_lang)
+            logger.info(
+                "Language changed via option-7 | %s new=%s", phone_number, new_lang
+            )
+            return main_menu(new_lang)
+        # No language chosen yet — show the selection screen
+        logger.info("Showing language re-selection for %s", phone_number)
         return language_menu()
 
     # ── 1. Weather ──────────────────────────────────────────────────
@@ -318,7 +333,8 @@ def _profile_response(phone_number: str, lang: str) -> str:
             f"{t('Crops')}: {crops}\n"
             f"{t('Language')}: {lang_display}"
         )
-    except Exception:
+    except Exception as exc:
+        logger.warning("Profile response failed for %s: %s", phone_number, exc)
         return end_msg(
             "You are not registered yet.\nSend REGISTER <name> via SMS\nor visit our website to sign up.",
             lang,

@@ -152,6 +152,62 @@ class LanguageSelectionTest(TestCase):
         r = req('1*7')   # English, then change language
         self.assertIn('Choose language', r)
 
+    # ── Language-change loop regression tests ────────────────────────
+    # These tests guard against the infinite loop bug:
+    # action='7' was always showing language_menu() without
+    # consuming the subsequent language choice (sub[1]).
+
+    def test_change_language_new_user_full_flow(self):
+        """
+        New user flow: English(1) → main → Change Language(7) → Luganda(3)
+        AT accumulates: text='1*7*3'
+        Expected: saves lg, shows main menu in Luganda — NOT another language menu.
+        """
+        r = req('1*7*3')
+        self.assertFalse(r.startswith('CON Welcome to Farmer') and 'Choose language' in r,
+                         "BUG: stuck in language selection loop")
+        # Should be main menu in Luganda
+        self.assertTrue(r.startswith('CON'))
+        self.assertIn("Obulagirizi", r)   # Luganda for Weather
+        self.assertEqual(UserLanguagePreference.get_language(PHONE), 'lg')
+
+    def test_change_language_returning_user_full_flow(self):
+        """
+        Returning user (saved=lg): Change Language(7) → English(1)
+        AT accumulates: text='7*1'
+        Expected: saves en, shows main menu in English — NOT another language menu.
+        """
+        UserLanguagePreference.set_language(PHONE, 'lg')
+        r = req('7*1')
+        self.assertFalse('Choose language' in r,
+                         "BUG: stuck in language selection loop")
+        self.assertIn('Weather Forecast', r)
+        self.assertEqual(UserLanguagePreference.get_language(PHONE), 'en')
+
+    def test_change_language_returning_user_to_kiswahili(self):
+        """Returning user (saved=rn) changes to Kiswahili via option 7."""
+        UserLanguagePreference.set_language(PHONE, 'rn')
+        r = req('7*2')   # change language → Kiswahili
+        self.assertIn('Hali ya Hewa', r)
+        self.assertEqual(UserLanguagePreference.get_language(PHONE), 'sw')
+
+    def test_change_language_shows_menu_before_selection(self):
+        """
+        When user picks 7 (change language) but hasn't picked a language yet,
+        the language selection menu should appear — not loop silently.
+        """
+        r = req('1*7')   # still waiting for language choice
+        self.assertTrue(r.startswith('CON'))
+        self.assertIn('Choose language', r)
+        self.assertIn('Luganda', r)
+
+    def test_language_persisted_after_change(self):
+        """Language preference is saved to DB after a change."""
+        req('1*7*3')   # switch to Luganda
+        self.assertEqual(UserLanguagePreference.get_language(PHONE), 'lg')
+        req('1*7*2')   # switch to Kiswahili
+        self.assertEqual(UserLanguagePreference.get_language(PHONE), 'sw')
+
 
 # ─────────────────────────────────────────────────────────────────── #
 # USSD handler — main menu navigation                                  #
