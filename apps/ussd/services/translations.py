@@ -326,7 +326,17 @@ def translate(text: str, language: str) -> str:
         cache.set(cache_key, result, _CACHE_TTL)
         return result
 
-    # OpenAI fallback
+    # OpenAI fallback — only if not obviously quota-exhausted
+    # (check the ai_assistant quota flag to avoid wasting time)
+    try:
+        from apps.ussd.services.ai_assistant import _last_failure_was_quota
+        if _last_failure_was_quota.get('gemini', False):
+            # Both AI providers are quota-exhausted — fall back to English immediately
+            logger.debug("Translation skipping OpenAI (quota exhausted) for lang=%s", language)
+            return text
+    except ImportError:
+        pass
+
     result = _openai_translate(text, language)
     if result:
         cache.set(cache_key, result, _CACHE_TTL)
@@ -355,13 +365,15 @@ def _cache_key(text: str, language: str) -> str:
 
 
 def _openai_translate(text: str, language: str) -> str | None:
-    """Call OpenAI to translate text. Returns None on any failure."""
+    """Call OpenAI to translate text. Returns None on any failure.
+    max_retries=0 and timeout=3s to stay within the USSD 5s budget.
+    """
     api_key = getattr(settings, 'OPENAI_API_KEY', '')
     if not api_key:
         return None
     try:
         import openai
-        client = openai.OpenAI(api_key=api_key)
+        client = openai.OpenAI(api_key=api_key, max_retries=0, timeout=3.0)
         lang_name = SUPPORTED_LANGUAGES[language]
         response = client.chat.completions.create(
             model='gpt-3.5-turbo',
@@ -382,5 +394,5 @@ def _openai_translate(text: str, language: str) -> str | None:
         )
         return response.choices[0].message.content.strip()
     except Exception as exc:
-        logger.error("OpenAI translation failed: %s", exc)
+        logger.error("OpenAI translation failed: %s", str(exc)[:200])
         return None

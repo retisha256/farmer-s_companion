@@ -29,6 +29,10 @@ from .translations import translate, SUPPORTED_LANGUAGES
 
 logger = logging.getLogger(__name__)
 
+# Tracks whether the last call to each provider failed due to quota.
+# Reset each call so we don't permanently skip a provider after one failure.
+_last_failure_was_quota: dict[str, bool] = {'gemini': False, 'openai': False}
+
 # ------------------------------------------------------------------ #
 # System prompt                                                        #
 # ------------------------------------------------------------------ #
@@ -136,15 +140,24 @@ def get_ai_response(topic: str, language: str = 'en', **kwargs) -> str:
 
     logger.info("AI request | topic=%s lang=%s prompt=%.80s", topic, language, prompt)
 
+    # Fast path: if Gemini was quota-exhausted on the last call,
+    # skip both API providers immediately and serve the static fallback.
+    # This keeps response time well under the 5s USSD gateway timeout.
+    if _last_failure_was_quota['gemini']:
+        logger.info("Quota exhausted (cached) — using static fallback immediately for topic=%s", topic)
+        response_en = _STATIC_RESPONSES.get(topic, _STATIC_RESPONSES['general'])
+        logger.info("AI final response (static, %d chars): %.80s", len(response_en), response_en)
+        return translate(response_en, language)
+
     # 1. Try Gemini
     response_en = _call_gemini(prompt)
 
-    # 2. Try OpenAI
-    if response_en is None:
-        logger.info("Gemini unavailable — trying OpenAI")
+    # 2. Try OpenAI only if Gemini failed for a non-quota reason
+    if response_en is None and not _last_failure_was_quota['gemini']:
+        logger.info("Gemini failed (non-quota) — trying OpenAI")
         response_en = _call_openai(prompt)
 
-    # 3. Static fallback
+    # 3. Static fallback — always fast, always available
     if response_en is None:
         logger.warning(
             "Both AI providers unavailable | topic=%s — using static fallback", topic
@@ -187,13 +200,7 @@ def get_general_advice(question: str, language: str = 'en') -> str:
 def _call_gemini(user_prompt: str) -> str | None:
     """
     Call Gemini 2.0 Flash. Returns English text or None.
-
-    Failure modes logged:
-      - MISSING_KEY      : GEMINI_API_KEY not set
-      - QUOTA_EXHAUSTED  : 429 RESOURCE_EXHAUSTED
-      - AUTH_FAILED      : 401 invalid key
-      - NETWORK_ERROR    : connection / timeout
-      - UNEXPECTED       : anything else
+    Hard timeout: 3 seconds (USSD gateway allows ~5s total).
     """
     api_key = getattr(settings, 'GEMINI_API_KEY', '').strip()
     if not api_key:
@@ -201,7 +208,7 @@ def _call_gemini(user_prompt: str) -> str | None:
         return None
 
     try:
-        from google import genai  # google-genai package
+        from google import genai
         client = genai.Client(api_key=api_key)
         full_prompt = f"{_SYSTEM_PROMPT}\n\n{user_prompt}"
         response = client.models.generate_content(
@@ -210,8 +217,10 @@ def _call_gemini(user_prompt: str) -> str | None:
         )
         text = response.text.strip() if response.text else None
         if not text:
-            logger.warning("Gemini | returned empty response for prompt: %.80s", user_prompt)
+            logger.warning("Gemini | empty response for prompt: %.80s", user_prompt)
+            _last_failure_was_quota['gemini'] = False
             return None
+        _last_failure_was_quota['gemini'] = False
         logger.info("Gemini | SUCCESS (%d chars)", len(text))
         return text
 
@@ -220,18 +229,22 @@ def _call_gemini(user_prompt: str) -> str | None:
         exc_type = type(exc).__name__
 
         if '429' in exc_str or 'RESOURCE_EXHAUSTED' in exc_str or 'quota' in exc_str.lower():
+            _last_failure_was_quota['gemini'] = True
             logger.error(
-                "Gemini | QUOTA_EXHAUSTED — add billing at https://ai.google.dev/pricing | %s",
-                exc_str[:200],
+                "Gemini | QUOTA_EXHAUSTED — add billing at https://ai.google.dev/pricing | %.200s",
+                exc_str,
             )
         elif '401' in exc_str or 'API_KEY_INVALID' in exc_str or 'authentication' in exc_str.lower():
-            logger.error("Gemini | AUTH_FAILED — check GEMINI_API_KEY | %s", exc_str[:200])
+            _last_failure_was_quota['gemini'] = False
+            logger.error("Gemini | AUTH_FAILED — check GEMINI_API_KEY | %.200s", exc_str)
         elif 'ConnectionError' in exc_type or 'Timeout' in exc_type or 'timeout' in exc_str.lower():
-            logger.error("Gemini | NETWORK_ERROR — %s: %s", exc_type, exc_str[:200])
+            _last_failure_was_quota['gemini'] = False
+            logger.error("Gemini | NETWORK_ERROR — %s: %.200s", exc_type, exc_str)
         else:
+            _last_failure_was_quota['gemini'] = False
             logger.error(
-                "Gemini | UNEXPECTED_ERROR — %s: %s\n%s",
-                exc_type, exc_str[:200], traceback.format_exc(),
+                "Gemini | UNEXPECTED_ERROR — %s: %.200s\n%s",
+                exc_type, exc_str, traceback.format_exc(),
             )
         return None
 
@@ -243,13 +256,7 @@ def _call_gemini(user_prompt: str) -> str | None:
 def _call_openai(user_prompt: str) -> str | None:
     """
     Call OpenAI gpt-3.5-turbo. Returns English text or None.
-
-    Failure modes logged:
-      - MISSING_KEY      : OPENAI_API_KEY not set
-      - QUOTA_EXHAUSTED  : 429 insufficient_quota
-      - AUTH_FAILED      : 401 invalid key
-      - NETWORK_ERROR    : connection / timeout
-      - UNEXPECTED       : anything else
+    Hard timeout: 3s, zero retries (USSD gateway allows ~5s total).
     """
     api_key = getattr(settings, 'OPENAI_API_KEY', '').strip()
     if not api_key:
@@ -258,7 +265,9 @@ def _call_openai(user_prompt: str) -> str | None:
 
     try:
         import openai
-        client = openai.OpenAI(api_key=api_key)
+        # max_retries=0 prevents the SDK from retrying 429s, which would
+        # consume the entire USSD timeout budget (5s) before falling back.
+        client = openai.OpenAI(api_key=api_key, max_retries=0, timeout=3.0)
         response = client.chat.completions.create(
             model='gpt-3.5-turbo',
             messages=[
@@ -281,18 +290,18 @@ def _call_openai(user_prompt: str) -> str | None:
 
         if 'insufficient_quota' in exc_str or ('429' in exc_str and 'quota' in exc_str.lower()):
             logger.error(
-                "OpenAI | QUOTA_EXHAUSTED — add credits at https://platform.openai.com/billing | %s",
-                exc_str[:200],
+                "OpenAI | QUOTA_EXHAUSTED — add credits at https://platform.openai.com/billing | %.200s",
+                exc_str,
             )
         elif 'AuthenticationError' in exc_type or 'invalid_api_key' in exc_str:
-            logger.error("OpenAI | AUTH_FAILED — check OPENAI_API_KEY | %s", exc_str[:200])
+            logger.error("OpenAI | AUTH_FAILED — check OPENAI_API_KEY | %.200s", exc_str)
         elif 'RateLimitError' in exc_type:
-            logger.error("OpenAI | RATE_LIMITED — too many requests | %s", exc_str[:200])
+            logger.error("OpenAI | RATE_LIMITED | %.200s", exc_str)
         elif 'ConnectionError' in exc_type or 'Timeout' in exc_type:
-            logger.error("OpenAI | NETWORK_ERROR — %s: %s", exc_type, exc_str[:200])
+            logger.error("OpenAI | NETWORK_ERROR — %s: %.200s", exc_type, exc_str)
         else:
             logger.error(
-                "OpenAI | UNEXPECTED_ERROR — %s: %s\n%s",
-                exc_type, exc_str[:200], traceback.format_exc(),
+                "OpenAI | UNEXPECTED_ERROR — %s: %.200s\n%s",
+                exc_type, exc_str, traceback.format_exc(),
             )
         return None
