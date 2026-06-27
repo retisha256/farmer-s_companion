@@ -181,6 +181,7 @@ LOGGING = {
         'apps.voice': {'handlers': ['voice_file', 'console'], 'level': 'DEBUG'},
         'apps.sms': {'handlers': ['sms_file', 'console'], 'level': 'DEBUG'},
         'apps.ussd': {'handlers': ['ussd_file', 'console'], 'level': 'DEBUG'},
+        'apps.ussd.services.ai_assistant': {'handlers': ['ussd_file', 'console'], 'level': 'DEBUG', 'propagate': False},
         '': {'handlers': ['app_file', 'console'], 'level': 'INFO'},
     },
 }

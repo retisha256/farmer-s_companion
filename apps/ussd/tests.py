@@ -356,10 +356,16 @@ class AskAITest(TestCase):
         self.assertTrue(r.startswith('END'))
 
     @patch('apps.ussd.services.ai_assistant._call_openai', return_value=None)
-    def test_ai_unavailable_fallback(self, _):
+    @patch('apps.ussd.services.ai_assistant._call_gemini', return_value=None)
+    def test_ai_unavailable_fallback(self, mock_gemini, mock_openai):
+        """When both APIs are down, static curated advice is returned — not an error."""
         r = req('1*5*1')
         self.assertTrue(r.startswith('END'))
-        self.assertIn('unavailable', r)
+        # Static fallback returns real farming advice, NOT an error message
+        self.assertNotIn('unavailable', r.lower())
+        self.assertNotIn('try again', r.lower())
+        # Should contain actual farming content
+        self.assertTrue(len(r) > 10)
 
     def test_back_from_ai(self):
         r = req('1*5*0')

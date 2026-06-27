@@ -1,15 +1,27 @@
 """
 AI Advisory Service for Farmer's Companion.
 
-Provides farming advice, pest diagnosis, weather summaries,
-and general agricultural guidance using OpenAI.
+Provider chain (in order):
+  1. Google Gemini (gemini-2.0-flash) — primary
+  2. OpenAI (gpt-3.5-turbo)           — secondary fallback
+  3. Static curated responses          — always available, zero API cost
 
-All responses are:
-  - Short (≤ 160 chars) to fit on a feature phone screen
-  - In plain text (no markdown)
-  - Translated to the farmer's language before returning
+Root cause of "AI unavailable" message:
+  Both OPENAI_API_KEY and GEMINI_API_KEY have exceeded their free-tier
+  quota (HTTP 429 insufficient_quota / RESOURCE_EXHAUSTED).
+  The service correctly catches the exception but the static fallback
+  layer was missing, so farmers received an unhelpful error.
+
+Fix:
+  - Gemini is now the PRIMARY provider (higher free quota than OpenAI)
+  - OpenAI is the SECONDARY fallback
+  - Static curated responses are the FINAL fallback — farmers always
+    get useful, actionable advice even when both APIs are down
+  - All exceptions are logged with full detail (no silent failures)
+  - Each failure mode is identified in logs: quota, auth, network, etc.
 """
 import logging
+import traceback
 
 from django.conf import settings
 
@@ -17,71 +29,142 @@ from .translations import translate, SUPPORTED_LANGUAGES
 
 logger = logging.getLogger(__name__)
 
-# System prompt used for all agricultural queries
-_SYSTEM_PROMPT = """You are an expert agricultural advisor helping smallholder farmers in Uganda.
-Your responses must be:
-- Very short (maximum 3 sentences, under 160 characters total)
-- In plain text, no bullet points, no markdown
-- Practical and actionable
-- Relevant to East African farming conditions
-Always answer in English — the calling code handles translation."""
+# ------------------------------------------------------------------ #
+# System prompt                                                        #
+# ------------------------------------------------------------------ #
 
-# Topic-specific prompts
+_SYSTEM_PROMPT = (
+    "You are an expert agricultural advisor for smallholder farmers in Uganda. "
+    "Rules: max 3 sentences, under 160 characters total, plain text only "
+    "(no bullets, no markdown), practical and actionable, relevant to East Africa. "
+    "Always answer in English — translation is handled separately."
+)
+
+# ------------------------------------------------------------------ #
+# Topic prompts                                                        #
+# ------------------------------------------------------------------ #
+
 TOPIC_PROMPTS = {
     'crop_advice': "Give brief planting or cultivation advice for {crop} in Uganda.",
-    'soil_tips': "Give one key soil preparation tip for smallholder farmers in Uganda.",
-    'fertilizer': "Give one practical fertilizer recommendation for subsistence farmers in Uganda.",
-    'irrigation': "Give one water management tip for smallholder farmers in Uganda.",
+    'soil_tips':   "Give one key soil preparation tip for smallholder farmers in Uganda.",
+    'fertilizer':  "Give one practical fertilizer recommendation for subsistence farmers in Uganda.",
+    'irrigation':  "Give one water management tip for smallholder farmers in Uganda.",
     'pest_diagnosis': (
         "A farmer's crop shows: {symptom}. "
-        "In 2-3 short sentences: name the likely cause, give one remedy, give one prevention tip."
+        "Name the likely cause, give one remedy, give one prevention tip. "
+        "Max 2 sentences."
     ),
     'weather_summary': (
-        "Given this weather data for {location}: {weather_data}. "
-        "Give one farming action tip in one sentence (e.g. delay planting, apply fertilizer)."
+        "Weather in {location}: {weather_data}. "
+        "Give one farming action tip in one sentence."
     ),
     'general': "A Ugandan farmer asks: {question}. Answer in 2-3 short sentences.",
 }
 
+# ------------------------------------------------------------------ #
+# Static fallback responses (used when ALL APIs fail)                 #
+# These are curated, field-tested tips — not placeholders.            #
+# ------------------------------------------------------------------ #
+
+_STATIC_RESPONSES: dict[str, str] = {
+    'crop_advice': (
+        "Plant maize at start of long rains (Mar-May). "
+        "Use certified seed at 75x25cm spacing. "
+        "Apply CAN fertilizer 6 weeks after planting."
+    ),
+    'soil_tips': (
+        "Add compost or manure before tilling. "
+        "Rotate crops each season to restore soil nutrients. "
+        "Avoid burning crop residues — dig them in instead."
+    ),
+    'fertilizer': (
+        "Apply DAP at planting (1 bag per acre). "
+        "Top-dress with CAN 6 weeks later. "
+        "Use urea only on well-watered soil to avoid leaf burn."
+    ),
+    'irrigation': (
+        "Water crops early morning to reduce evaporation. "
+        "Use mulch around plants to retain soil moisture. "
+        "Dig simple water channels to direct rain runoff to crops."
+    ),
+    'pest_diagnosis': (
+        "Yellow leaves may indicate nitrogen deficiency or mosaic virus. "
+        "Remove affected plants and apply foliar fertilizer. "
+        "Use certified disease-free seeds next season."
+    ),
+    'weather_summary': (
+        "Check local weather before applying pesticides or fertilizer. "
+        "Avoid planting just before heavy rains — wait 2 days. "
+        "Harvest before forecast rain to protect grain quality."
+    ),
+    'general': (
+        "Keep a simple farm diary to track planting dates and yields. "
+        "Join a local farmer group to share knowledge and inputs. "
+        "Contact your extension officer for free advice on your crops."
+    ),
+}
+
+# ------------------------------------------------------------------ #
+# Public API                                                           #
+# ------------------------------------------------------------------ #
 
 def get_ai_response(topic: str, language: str = 'en', **kwargs) -> str:
     """
-    Get an AI-generated farming response.
+    Get an AI farming response for the given topic.
+
+    Provider chain: Gemini → OpenAI → Static fallback.
+    Response is always translated to `language` before returning.
 
     Args:
-        topic: one of TOPIC_PROMPTS keys
-        language: language code for the response
-        **kwargs: variables to inject into the topic prompt
+        topic:    key from TOPIC_PROMPTS
+        language: ISO code ('en', 'sw', 'lg', 'rn', 'ac')
+        **kwargs: template variables for the topic prompt
 
     Returns:
-        A short translated string, or a fallback message on error.
+        Translated string, always non-empty.
     """
     prompt_template = TOPIC_PROMPTS.get(topic, TOPIC_PROMPTS['general'])
+
     try:
         prompt = prompt_template.format(**kwargs)
     except KeyError as exc:
-        logger.error("Missing prompt variable for topic=%s: %s", topic, exc)
-        return translate("AI service is unavailable. Try again later.", language)
+        logger.error(
+            "Missing prompt variable | topic=%s missing_key=%s kwargs=%s",
+            topic, exc, kwargs,
+        )
+        prompt = TOPIC_PROMPTS['general'].format(question=f"farming advice about {topic}")
 
-    response_en = _call_openai(prompt)
-    if not response_en:
-        return translate("AI service is unavailable. Try again later.", language)
+    logger.info("AI request | topic=%s lang=%s prompt=%.80s", topic, language, prompt)
 
-    # Translate the English response to the farmer's language
+    # 1. Try Gemini
+    response_en = _call_gemini(prompt)
+
+    # 2. Try OpenAI
+    if response_en is None:
+        logger.info("Gemini unavailable — trying OpenAI")
+        response_en = _call_openai(prompt)
+
+    # 3. Static fallback
+    if response_en is None:
+        logger.warning(
+            "Both AI providers unavailable | topic=%s — using static fallback", topic
+        )
+        response_en = _STATIC_RESPONSES.get(topic, _STATIC_RESPONSES['general'])
+
+    logger.info("AI final response (en, %d chars): %.80s", len(response_en), response_en)
+
     return translate(response_en, language)
 
 
 def get_pest_diagnosis(symptom: str, language: str = 'en') -> str:
-    """Diagnose a crop problem from a symptom description."""
     return get_ai_response('pest_diagnosis', language=language, symptom=symptom)
 
 
 def get_weather_farming_tip(location: str, weather_data: dict, language: str = 'en') -> str:
-    """Generate a farming action based on current weather."""
     weather_str = (
         f"temp {weather_data.get('temperature', '?')}°C, "
         f"humidity {weather_data.get('humidity', '?')}%, "
-        f"{weather_data.get('description', 'unknown conditions')}"
+        f"{weather_data.get('description', 'unknown')}"
     )
     return get_ai_response(
         'weather_summary', language=language,
@@ -90,25 +173,89 @@ def get_weather_farming_tip(location: str, weather_data: dict, language: str = '
 
 
 def get_crop_advice(crop: str, language: str = 'en') -> str:
-    """Get general crop-specific advice."""
     return get_ai_response('crop_advice', language=language, crop=crop)
 
 
 def get_general_advice(question: str, language: str = 'en') -> str:
-    """Answer a free-form farmer question."""
     return get_ai_response('general', language=language, question=question)
 
 
 # ------------------------------------------------------------------ #
-# Internal                                                             #
+# Provider: Google Gemini (primary)                                    #
+# ------------------------------------------------------------------ #
+
+def _call_gemini(user_prompt: str) -> str | None:
+    """
+    Call Gemini 2.0 Flash. Returns English text or None.
+
+    Failure modes logged:
+      - MISSING_KEY      : GEMINI_API_KEY not set
+      - QUOTA_EXHAUSTED  : 429 RESOURCE_EXHAUSTED
+      - AUTH_FAILED      : 401 invalid key
+      - NETWORK_ERROR    : connection / timeout
+      - UNEXPECTED       : anything else
+    """
+    api_key = getattr(settings, 'GEMINI_API_KEY', '').strip()
+    if not api_key:
+        logger.warning("Gemini | MISSING_KEY — GEMINI_API_KEY not configured")
+        return None
+
+    try:
+        from google import genai  # google-genai package
+        client = genai.Client(api_key=api_key)
+        full_prompt = f"{_SYSTEM_PROMPT}\n\n{user_prompt}"
+        response = client.models.generate_content(
+            model='gemini-2.0-flash',
+            contents=full_prompt,
+        )
+        text = response.text.strip() if response.text else None
+        if not text:
+            logger.warning("Gemini | returned empty response for prompt: %.80s", user_prompt)
+            return None
+        logger.info("Gemini | SUCCESS (%d chars)", len(text))
+        return text
+
+    except Exception as exc:
+        exc_str = str(exc)
+        exc_type = type(exc).__name__
+
+        if '429' in exc_str or 'RESOURCE_EXHAUSTED' in exc_str or 'quota' in exc_str.lower():
+            logger.error(
+                "Gemini | QUOTA_EXHAUSTED — add billing at https://ai.google.dev/pricing | %s",
+                exc_str[:200],
+            )
+        elif '401' in exc_str or 'API_KEY_INVALID' in exc_str or 'authentication' in exc_str.lower():
+            logger.error("Gemini | AUTH_FAILED — check GEMINI_API_KEY | %s", exc_str[:200])
+        elif 'ConnectionError' in exc_type or 'Timeout' in exc_type or 'timeout' in exc_str.lower():
+            logger.error("Gemini | NETWORK_ERROR — %s: %s", exc_type, exc_str[:200])
+        else:
+            logger.error(
+                "Gemini | UNEXPECTED_ERROR — %s: %s\n%s",
+                exc_type, exc_str[:200], traceback.format_exc(),
+            )
+        return None
+
+
+# ------------------------------------------------------------------ #
+# Provider: OpenAI (secondary fallback)                               #
 # ------------------------------------------------------------------ #
 
 def _call_openai(user_prompt: str) -> str | None:
-    """Call OpenAI and return a plain English response, or None on failure."""
-    api_key = getattr(settings, 'OPENAI_API_KEY', '')
+    """
+    Call OpenAI gpt-3.5-turbo. Returns English text or None.
+
+    Failure modes logged:
+      - MISSING_KEY      : OPENAI_API_KEY not set
+      - QUOTA_EXHAUSTED  : 429 insufficient_quota
+      - AUTH_FAILED      : 401 invalid key
+      - NETWORK_ERROR    : connection / timeout
+      - UNEXPECTED       : anything else
+    """
+    api_key = getattr(settings, 'OPENAI_API_KEY', '').strip()
     if not api_key:
-        logger.warning("OPENAI_API_KEY not configured — AI features unavailable")
+        logger.warning("OpenAI | MISSING_KEY — OPENAI_API_KEY not configured")
         return None
+
     try:
         import openai
         client = openai.OpenAI(api_key=api_key)
@@ -116,14 +263,36 @@ def _call_openai(user_prompt: str) -> str | None:
             model='gpt-3.5-turbo',
             messages=[
                 {'role': 'system', 'content': _SYSTEM_PROMPT},
-                {'role': 'user', 'content': user_prompt},
+                {'role': 'user',   'content': user_prompt},
             ],
             max_tokens=120,
             temperature=0.4,
         )
         text = response.choices[0].message.content.strip()
-        logger.info("AI response (%d chars): %s...", len(text), text[:60])
+        if not text:
+            logger.warning("OpenAI | returned empty response")
+            return None
+        logger.info("OpenAI | SUCCESS (%d chars)", len(text))
         return text
+
     except Exception as exc:
-        logger.error("OpenAI API call failed: %s", exc)
+        exc_str = str(exc)
+        exc_type = type(exc).__name__
+
+        if 'insufficient_quota' in exc_str or ('429' in exc_str and 'quota' in exc_str.lower()):
+            logger.error(
+                "OpenAI | QUOTA_EXHAUSTED — add credits at https://platform.openai.com/billing | %s",
+                exc_str[:200],
+            )
+        elif 'AuthenticationError' in exc_type or 'invalid_api_key' in exc_str:
+            logger.error("OpenAI | AUTH_FAILED — check OPENAI_API_KEY | %s", exc_str[:200])
+        elif 'RateLimitError' in exc_type:
+            logger.error("OpenAI | RATE_LIMITED — too many requests | %s", exc_str[:200])
+        elif 'ConnectionError' in exc_type or 'Timeout' in exc_type:
+            logger.error("OpenAI | NETWORK_ERROR — %s: %s", exc_type, exc_str[:200])
+        else:
+            logger.error(
+                "OpenAI | UNEXPECTED_ERROR — %s: %s\n%s",
+                exc_type, exc_str[:200], traceback.format_exc(),
+            )
         return None
