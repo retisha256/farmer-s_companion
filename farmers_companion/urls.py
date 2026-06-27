@@ -8,6 +8,13 @@ from django.conf.urls.static import static
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('', include('apps.core.urls')),
+
+    # Africa's Talking webhook shortcuts (configure these URLs in your AT dashboard)
+    path('ussd/callback/', include('apps.ussd.urls')),   # → apps.ussd.urls  (shortcut)
+    path('sms/callback/',  include('apps.sms.urls')),    # → apps.sms.urls   (shortcut)
+    path('voice/callback/', include('apps.voice.urls')), # → apps.voice.urls (shortcut)
+
+    # API routes
     path('api/voice/', include('apps.voice.urls')),
     path('api/sms/', include('apps.sms.urls')),
     path('api/ussd/', include('apps.ussd.urls')),
