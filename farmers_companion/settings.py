@@ -130,6 +130,10 @@ GEMINI_API_KEY = config('GEMINI_API_KEY', default='')
 WEATHER_API_KEY = config('WEATHER_API_KEY', default='')
 WEATHER_API_BASE_URL = config('WEATHER_API_BASE_URL', default='https://api.openweathermap.org/data/2.5')
 
+# Market prices
+MARKET_API_URL = config('MARKET_API_URL', default='')
+MARKET_API_KEY = config('MARKET_API_KEY', default='')
+
 # Celery
 CELERY_BROKER_URL = config('CELERY_BROKER_URL', default='redis://localhost:6379/0')
 CELERY_RESULT_BACKEND = config('CELERY_RESULT_BACKEND', default='redis://localhost:6379/0')

@@ -23,6 +23,7 @@ class UserLanguagePreference(TimeStampedModel):
         ('sw', 'Kiswahili'),
         ('lg', 'Luganda'),
         ('rn', 'Runyankole'),
+        ('ac', 'Acholi'),
     ]
 
     phone_number = models.CharField(max_length=20, unique=True)

@@ -1,31 +1,40 @@
 """
-USSD session handler — with language selection as the first step.
+USSD session handler — language-first flow with AI integration.
 
-New session flow
-─────────────────────────────────────────────────────────────────────
-text=''        → language selection menu (always in English)
-text='1'       → user chose English   → save preference → main menu
-text='2'       → user chose Kiswahili → save preference → main menu
-text='3'       → user chose Luganda   → save preference → main menu
-text='4'       → user chose Runyankole→ save preference → main menu
+Session flow (Africa's Talking accumulates all input as '*'-joined text)
+═══════════════════════════════════════════════════════════════════════════
+text=''        → language selection (always English; skipped for returning users)
+text='1'–'5'   → language chosen → save → main menu in chosen language
 
-From the main menu (lang=<code>):
-text='<lang>*1'       → weather sub-menu
-text='<lang>*1*1'     → current weather (END)
-text='<lang>*2'       → market prices sub-menu
-text='<lang>*2*1'     → maize price (END)
-text='<lang>*2*2'     → wheat price (END)
-text='<lang>*2*3'     → tomato price (END)
-text='<lang>*3'       → crop advisory sub-menu
-text='<lang>*3*1'     → planting tips (END)
-text='<lang>*3*2'     → pest & disease (END)
-text='<lang>*3*3'     → harvest advice (END)
-text='<lang>*4'       → my profile (END)
-text='<lang>*5'       → language selection again (re-entry)
-text='<lang>*0'       → exit (END)
-─────────────────────────────────────────────────────────────────────
-Returning user (language already saved):
-  Step 0 is skipped; user goes straight to the main menu.
+From main menu  (steps[0]=lang_digit, steps[1]=action):
+  *1   → Weather sub-menu
+  *1*1 → Today's weather with AI farming tip (END)
+  *1*2 → 7-day forecast intro (END)
+  *2   → Market prices sub-menu
+  *2*1 → Maize price (END)
+  *2*2 → Beans price (END)
+  *2*3 → Cassava price (END)
+  *2*4 → Coffee price (END)
+  *3   → Pest diagnosis sub-menu
+  *3*1 → Yellow/wilting leaves → AI diagnosis (END)
+  *3*2 → Holes in leaves       → AI diagnosis (END)
+  *3*3 → Stunted growth        → AI diagnosis (END)
+  *3*4 → Other (generic prompt) (END)
+  *4   → Farming tips sub-menu
+  *4*1 → Planting tips (END)
+  *4*2 → Pest & disease alerts (END)
+  *4*3 → Harvest advice (END)
+  *5   → Ask AI sub-menu
+  *5*1 → Crop advice AI (END)
+  *5*2 → Soil tips AI (END)
+  *5*3 → Fertilizer guide AI (END)
+  *5*4 → Irrigation tips AI (END)
+  *6   → My profile (END)
+  *7   → Re-show language menu
+  *0   → Exit (END)
+
+Back (0) from any sub-menu returns to main menu.
+═══════════════════════════════════════════════════════════════════════════
 """
 import logging
 
@@ -36,7 +45,9 @@ from .menu_structure import (
     main_menu,
     weather_menu,
     market_menu,
-    crop_menu,
+    pest_menu,
+    farming_tips_menu,
+    ai_menu,
     end_msg,
 )
 from .translations import translate
@@ -51,125 +62,173 @@ def handle_ussd_request(session_id: str, phone_number: str, text: str) -> str:
     """
     logger.info("USSD | session=%s phone=%s text='%s'", session_id, phone_number, text)
 
-    steps = [s for s in text.split('*')] if text else []
+    steps = text.split('*') if text else []
 
-    # ── Step 0: no input yet ────────────────────────────────────────
+    # ── Step 0: first dial — no input yet ───────────────────────────
     if not steps:
         saved_lang = UserLanguagePreference.get_language(phone_number)
+        # Returning user with a non-English saved preference skips language step
         if saved_lang and saved_lang != 'en':
-            # Returning user with a non-English preference — skip language step
             return main_menu(saved_lang)
-        # New user or English default — show language selection
         return language_menu()
 
     first = steps[0]
 
-    # ── Step 1: user is choosing a language ─────────────────────────
+    # ── Step 1: language selection ───────────────────────────────────
     if first in LANGUAGE_MAP and len(steps) == 1:
         lang = LANGUAGE_MAP[first]
         UserLanguagePreference.set_language(phone_number, lang)
         logger.info("Language set to %s for %s", lang, phone_number)
         return main_menu(lang)
 
-    # ── Determine active language ────────────────────────────────────
-    # After language selection, steps[0] is the language choice digit.
-    # All subsequent choices are in steps[1], steps[2], etc.
+    # ── Resolve active language ──────────────────────────────────────
     if first in LANGUAGE_MAP:
         lang = LANGUAGE_MAP[first]
-        sub_steps = steps[1:]
+        sub = steps[1:]
     else:
-        # Fallback: use stored preference (handles edge cases)
         lang = UserLanguagePreference.get_language(phone_number)
-        sub_steps = steps
+        sub = steps
 
-    depth = len(sub_steps)
-
-    # ── No sub-step yet → show main menu ────────────────────────────
-    if depth == 0:
+    if not sub:
         return main_menu(lang)
 
-    action = sub_steps[0]
+    action = sub[0]
 
-    # ── Exit ─────────────────────────────────────────────────────────
+    # ── 0. Exit ──────────────────────────────────────────────────────
     if action == '0':
         return end_msg("Thank you for using Farmer's Companion. Goodbye!", lang)
 
-    # ── Change language (option 5) ───────────────────────────────────
-    if action == '5':
+    # ── 7. Change language ───────────────────────────────────────────
+    if action == '7':
         return language_menu()
 
     # ── 1. Weather ──────────────────────────────────────────────────
     if action == '1':
-        if depth == 1:
+        if len(sub) == 1:
             return weather_menu(lang)
-        choice = sub_steps[1]
+        choice = sub[1]
         if choice == '0':
             return main_menu(lang)
         location = _get_farmer_location(phone_number)
-        return _weather_response(location, lang)
+        if choice == '1':
+            return _today_weather(location, lang)
+        if choice == '2':
+            return _forecast_response(location, lang)
+        return end_msg("Invalid option. Please try again.", lang)
 
     # ── 2. Market Prices ────────────────────────────────────────────
     if action == '2':
-        if depth == 1:
+        if len(sub) == 1:
             return market_menu(lang)
-        choice = sub_steps[1]
+        choice = sub[1]
         if choice == '0':
             return main_menu(lang)
-        crops = {'1': 'Maize', '2': 'Wheat', '3': 'Tomatoes'}
+        crops = {'1': 'Maize', '2': 'Beans', '3': 'Cassava', '4': 'Coffee'}
         crop = crops.get(choice)
         if crop:
             return _price_response(crop, lang)
         return end_msg("Invalid choice. Please try again.", lang)
 
-    # ── 3. Crop Advisory ────────────────────────────────────────────
+    # ── 3. Pest Diagnosis ───────────────────────────────────────────
     if action == '3':
-        if depth == 1:
-            return crop_menu(lang)
-        choice = sub_steps[1]
+        if len(sub) == 1:
+            return pest_menu(lang)
+        choice = sub[1]
         if choice == '0':
             return main_menu(lang)
-        return _crop_advice_response(choice, lang)
+        symptoms = {
+            '1': 'yellow or wilting leaves',
+            '2': 'holes in leaves',
+            '3': 'stunted growth',
+            '4': 'general crop problem',
+        }
+        symptom = symptoms.get(choice)
+        if symptom:
+            return _pest_diagnosis(symptom, lang)
+        return end_msg("Invalid choice. Please try again.", lang)
 
-    # ── 4. My Profile ───────────────────────────────────────────────
+    # ── 4. Farming Tips ─────────────────────────────────────────────
     if action == '4':
+        if len(sub) == 1:
+            return farming_tips_menu(lang)
+        choice = sub[1]
+        if choice == '0':
+            return main_menu(lang)
+        return _farming_tip(choice, lang)
+
+    # ── 5. Ask AI ───────────────────────────────────────────────────
+    if action == '5':
+        if len(sub) == 1:
+            return ai_menu(lang)
+        choice = sub[1]
+        if choice == '0':
+            return main_menu(lang)
+        return _ai_advice(choice, lang)
+
+    # ── 6. My Profile ───────────────────────────────────────────────
+    if action == '6':
         return _profile_response(phone_number, lang)
 
     return end_msg("Invalid option. Please try again.", lang)
 
 
 # ------------------------------------------------------------------ #
-# Private helpers                                                      #
+# Private response builders                                            #
 # ------------------------------------------------------------------ #
 
 def _get_farmer_location(phone_number: str) -> str:
-    """Return farmer's saved location name, or default to Kampala."""
     try:
         from apps.farmers.models import Farmer
-        farmer = Farmer.objects.select_related('location').get(phone_number=phone_number)
-        if farmer.location:
-            return farmer.location.name
+        f = Farmer.objects.select_related('location').get(phone_number=phone_number)
+        if f.location:
+            return f.location.name
     except Exception:
         pass
     return 'Kampala'
 
 
-def _weather_response(location: str, lang: str) -> str:
+def _today_weather(location: str, lang: str) -> str:
     try:
         from apps.weather.services.weather_api import get_current_weather
+        from .ai_assistant import get_weather_farming_tip
         data = get_current_weather(location)
-        # Build response with translated label words
-        label_loc   = translate("Weather in", lang) if lang != 'en' else "Weather in"
-        label_temp  = translate("Temp", lang) if lang != 'en' else "Temp"
-        label_hum   = translate("Humidity", lang) if lang != 'en' else "Humidity"
-        label_cond  = translate("Conditions", lang) if lang != 'en' else "Conditions"
+        tip = get_weather_farming_tip(location, data, lang)
+        t_loc   = translate("Weather in", lang) if lang != 'en' else "Weather in"
+        t_temp  = translate("Temp", lang)       if lang != 'en' else "Temp"
+        t_hum   = translate("Humidity", lang)   if lang != 'en' else "Humidity"
         return (
-            f"END {label_loc} {data['location']}:\n"
-            f"{label_temp}: {data['temperature']}°C\n"
-            f"{label_hum}: {data['humidity']}%\n"
-            f"{label_cond}: {data['description'].capitalize()}"
+            f"END {t_loc} {data['location']}:\n"
+            f"{t_temp}: {data['temperature']}°C\n"
+            f"{t_hum}: {data['humidity']}%\n"
+            f"{data['description'].capitalize()}\n"
+            f"{tip}"
         )
     except Exception as exc:
-        logger.warning("USSD weather lookup failed: %s", exc)
+        logger.warning("Weather response failed: %s", exc)
+        return end_msg("Could not retrieve weather right now. Try again later.", lang)
+
+
+def _forecast_response(location: str, lang: str) -> str:
+    try:
+        from apps.weather.services.weather_api import get_forecast
+        forecasts = get_forecast(location, days=3)
+        if not forecasts:
+            raise ValueError("No forecast data")
+        # Summarise: pick readings at 12:00 for each distinct day
+        seen_dates, lines = set(), []
+        for entry in forecasts:
+            date = entry.get('dt_txt', '')[:10]
+            if date and date not in seen_dates and '12:00' in entry.get('dt_txt', ''):
+                seen_dates.add(date)
+                temp = entry['main']['temp']
+                desc = entry['weather'][0]['description']
+                lines.append(f"{date}: {temp}°C, {desc}")
+            if len(lines) == 3:
+                break
+        forecast_text = '\n'.join(lines) or 'No data'
+        return f"END {location} forecast:\n{forecast_text}"
+    except Exception as exc:
+        logger.warning("Forecast response failed: %s", exc)
         return end_msg("Could not retrieve weather right now. Try again later.", lang)
 
 
@@ -178,40 +237,70 @@ def _price_response(crop: str, lang: str) -> str:
         from apps.sms.services.market_data import get_market_prices
         data = get_market_prices(crop, region='Uganda')
         price = data.get('price_per_kg', 'N/A')
-        currency = data.get('currency', 'UGX')
-        translated_crop = translate(crop, lang)
-        return f"END {translated_crop}:\n{price} {currency}/kg"
+        market = data.get('market', 'Kampala')
+        source = '~' if data.get('source') == 'baseline' else ''
+        translated_crop = translate(f"1. {crop}", lang).lstrip('1. ')
+        return (
+            f"END {translated_crop}\n"
+            f"{source}{price} UGX/kg\n"
+            f"{market} market"
+        )
     except Exception as exc:
-        logger.warning("USSD price lookup failed for %s: %s", crop, exc)
+        logger.warning("Price response failed for %s: %s", crop, exc)
         return end_msg("Invalid choice. Please try again.", lang)
 
 
-def _crop_advice_response(choice: str, lang: str) -> str:
-    advice_en = {
+def _pest_diagnosis(symptom: str, lang: str) -> str:
+    try:
+        from .ai_assistant import get_pest_diagnosis
+        result = get_pest_diagnosis(symptom, lang)
+        return f"END {result}"
+    except Exception as exc:
+        logger.warning("Pest diagnosis failed: %s", exc)
+        return end_msg("AI service is unavailable. Try again later.", lang)
+
+
+def _farming_tip(choice: str, lang: str) -> str:
+    tips_en = {
         '1': (
-            "Planting tips:\n"
-            "- Prepare land 2 weeks before planting.\n"
-            "- Use certified seeds.\n"
-            "- Plant at the start of the rains.\n"
-            "- Space maize 75cm x 25cm."
+            "Planting tips: Prepare land 2 weeks early. "
+            "Use certified seeds. Plant at start of rains. "
+            "Space maize 75x25cm."
         ),
         '2': (
-            "Pest & Disease Alerts:\n"
-            "- Check for Fall Armyworm on maize leaves.\n"
-            "- Apply neem-based spray early morning.\n"
-            "- Report outbreaks to your local extension officer."
+            "Pest alerts: Check for Fall Armyworm on maize. "
+            "Spray neem early morning. "
+            "Report outbreaks to extension officer."
         ),
         '3': (
-            "Harvest Advice:\n"
-            "- Harvest maize when husks are dry and brown.\n"
-            "- Dry grain to below 13% moisture before storage.\n"
-            "- Use hermetic bags to prevent post-harvest losses."
+            "Harvest advice: Harvest maize when husks are dry. "
+            "Dry grain below 13% moisture. "
+            "Use hermetic bags for storage."
         ),
     }
-    text = advice_en.get(choice)
+    text = tips_en.get(choice)
     if not text:
         return end_msg("Invalid choice. Please try again.", lang)
     return 'END ' + translate(text, lang)
+
+
+def _ai_advice(choice: str, lang: str) -> str:
+    try:
+        from .ai_assistant import get_ai_response
+        topics = {
+            '1': ('crop_advice', {'crop': 'maize'}),
+            '2': ('soil_tips', {}),
+            '3': ('fertilizer', {}),
+            '4': ('irrigation', {}),
+        }
+        if choice not in topics:
+            return end_msg("Invalid choice. Please try again.", lang)
+        topic, kwargs = topics[choice]
+        result = get_ai_response(topic, language=lang, **kwargs)
+        return f"END {result}"
+    except Exception as exc:
+        logger.warning("AI advice failed for choice=%s: %s", choice, exc)
+        return end_msg("AI service is unavailable. Try again later.", lang)
 
 
 def _profile_response(phone_number: str, lang: str) -> str:
@@ -220,17 +309,14 @@ def _profile_response(phone_number: str, lang: str) -> str:
         farmer = Farmer.objects.select_related('location').get(phone_number=phone_number)
         location = farmer.location.name if farmer.location else translate('Not set', lang)
         crops = ', '.join(c.name for c in farmer.crops.all()) or translate('None', lang)
-        name_label     = translate('Name', lang)     if lang != 'en' else 'Name'
-        phone_label    = translate('Phone', lang)    if lang != 'en' else 'Phone'
-        location_label = translate('Location', lang) if lang != 'en' else 'Location'
-        crops_label    = translate('Crops', lang)    if lang != 'en' else 'Crops'
-        lang_label     = translate('Language', lang) if lang != 'en' else 'Language'
+        lang_display = dict(UserLanguagePreference.LANGUAGE_CHOICES).get(farmer.language, farmer.language)
+        t = lambda s: translate(s, lang) if lang != 'en' else s
         return (
-            f"END {name_label}: {farmer.name or translate('Not set', lang)}\n"
-            f"{phone_label}: {farmer.phone_number}\n"
-            f"{location_label}: {location}\n"
-            f"{crops_label}: {crops}\n"
-            f"{lang_label}: {farmer.get_language_display() if hasattr(farmer, 'get_language_display') else farmer.language}"
+            f"END {t('Name')}: {farmer.name or t('Not set')}\n"
+            f"{t('Phone')}: {farmer.phone_number}\n"
+            f"{t('Location')}: {location}\n"
+            f"{t('Crops')}: {crops}\n"
+            f"{t('Language')}: {lang_display}"
         )
     except Exception:
         return end_msg(
