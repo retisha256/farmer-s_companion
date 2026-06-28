@@ -208,14 +208,25 @@ def _today_weather(location: str, lang: str) -> str:
         from .ai_assistant import get_weather_farming_tip
         data = get_current_weather(location)
         tip = get_weather_farming_tip(location, data, lang)
-        t_loc   = translate("Weather in", lang) if lang != 'en' else "Weather in"
-        t_temp  = translate("Temp", lang)       if lang != 'en' else "Temp"
-        t_hum   = translate("Humidity", lang)   if lang != 'en' else "Humidity"
+
+        # Translate all label strings and the weather description
+        t_hdr  = translate("Weather in", lang)
+        t_temp = translate("Temp", lang)
+        t_hum  = translate("Humidity", lang)
+        # Translate weather description (e.g. "light rain") from the dict
+        desc_en = data['description'].lower().strip()
+        desc_translated = translate(desc_en, lang)
+
+        logger.info(
+            "Weather response | lang=%s location=%s desc='%s' -> '%s'",
+            lang, location, desc_en, desc_translated,
+        )
+
         return (
-            f"END {t_loc} {data['location']}:\n"
+            f"END {t_hdr} {data['location']}:\n"
             f"{t_temp}: {data['temperature']}°C\n"
             f"{t_hum}: {data['humidity']}%\n"
-            f"{data['description'].capitalize()}\n"
+            f"{desc_translated.capitalize()}\n"
             f"{tip}"
         )
     except Exception as exc:
@@ -229,19 +240,20 @@ def _forecast_response(location: str, lang: str) -> str:
         forecasts = get_forecast(location, days=3)
         if not forecasts:
             raise ValueError("No forecast data")
-        # Summarise: pick readings at 12:00 for each distinct day
         seen_dates, lines = set(), []
         for entry in forecasts:
             date = entry.get('dt_txt', '')[:10]
             if date and date not in seen_dates and '12:00' in entry.get('dt_txt', ''):
                 seen_dates.add(date)
                 temp = entry['main']['temp']
-                desc = entry['weather'][0]['description']
+                desc_en = entry['weather'][0]['description'].lower()
+                desc = translate(desc_en, lang)
                 lines.append(f"{date}: {temp}°C, {desc}")
             if len(lines) == 3:
                 break
+        forecast_label = translate("forecast", lang)
         forecast_text = '\n'.join(lines) or 'No data'
-        return f"END {location} forecast:\n{forecast_text}"
+        return f"END {location} {forecast_label}:\n{forecast_text}"
     except Exception as exc:
         logger.warning("Forecast response failed: %s", exc)
         return end_msg("Could not retrieve weather right now. Try again later.", lang)

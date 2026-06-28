@@ -263,6 +263,299 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         'ac': '3. Pwony pa Kayo Cek',
     },
 
+    # ── Weather response labels ──────────────────────────────────────
+    "Weather in": {
+        'sw': 'Hali ya hewa huko',
+        'lg': 'Obulagirizi e',
+        'rn': "Ikirere i",
+        'ac': 'Cua i',
+    },
+    "Temp": {
+        'sw': 'Joto', 'lg': 'Obutiti',
+        'rn': 'Ubushyuhe', 'ac': 'Lyeto',
+    },
+    "Humidity": {
+        'sw': 'Unyevu', 'lg': 'Amaizi mu bbanga',
+        'rn': 'Ubunyumu', 'ac': 'Pii i kin',
+    },
+    "forecast": {
+        'sw': 'utabiri', 'lg': 'obulagirizi',
+        'rn': 'amakuru', 'ac': 'cik',
+    },
+    # Weather conditions from OpenWeatherMap (most common ones)
+    "light rain": {
+        'sw': 'mvua ndogo', 'lg': 'enkuba entono',
+        'rn': 'imvura nkeya', 'ac': 'kot matidi',
+    },
+    "moderate rain": {
+        'sw': 'mvua ya wastani', 'lg': 'enkuba ennungi',
+        'rn': 'imvura yo hagati', 'ac': 'kot malac',
+    },
+    "heavy rain": {
+        'sw': 'mvua kubwa', 'lg': 'enkuba ennene',
+        'rn': 'imvura nyinshi', 'ac': 'kot mapol',
+    },
+    "clear sky": {
+        'sw': 'anga wazi', 'lg': 'eggulu erikutte',
+        'rn': 'ijuru ritagatifu', 'ac': 'polo yar',
+    },
+    "few clouds": {
+        'sw': 'mawingu machache', 'lg': 'ebire bisusse mangu',
+        'rn': 'ibicu bike', 'ac': 'kor manok',
+    },
+    "scattered clouds": {
+        'sw': 'mawingu yaliyotawanyika', 'lg': 'ebire ebisasaanye',
+        'rn': 'ibicu byarasambye', 'ac': 'kor ma olwelo',
+    },
+    "overcast clouds": {
+        'sw': 'mawingu mengi', 'lg': 'ebire bingi',
+        'rn': 'ibicu byinshi', 'ac': 'kor mapol',
+    },
+    "thunderstorm": {
+        'sw': 'dhoruba ya radi', 'lg': 'kibugwe',
+        'rn': 'inkuba', 'ac': 'nywel',
+    },
+    "mist": {
+        'sw': 'ukungu', 'lg': 'omufu',
+        'rn': 'ibihu', 'ac': 'pek',
+    },
+    "haze": {
+        'sw': 'ukungu mwembamba', 'lg': 'omufu omutono',
+        'rn': 'umwotsi', 'ac': 'pek matidi',
+    },
+    "sunny": {
+        'sw': 'jua kali', 'lg': 'omusana',
+        'rn': 'izuba', 'ac': 'cawa',
+    },
+    "partly cloudy": {
+        'sw': 'mawingu kidogo', 'lg': 'ebire bisusse',
+        'rn': 'ibicu bike', 'ac': 'kor manok',
+    },
+
+    # ── Farming tips (full text) ─────────────────────────────────────
+    "Planting tips: Prepare land 2 weeks early. Use certified seeds. Plant at start of rains. Space maize 75x25cm.": {
+        'sw': (
+            "Vidokezo vya kupanda: Tayarisha ardhi wiki 2 mapema. "
+            "Tumia mbegu zilizoidhinishwa. Panda mwanzo wa mvua. "
+            "Nafasi ya mahindi: 75x25cm."
+        ),
+        'lg': (
+            "Ebiragiro eby'okusiga: Tegeka ettaka wiiki 2 nga tonnasiga. "
+            "Kozesa ensigo ez'eby'obuwangwa. Siga nga enkuba egenda okutandika. "
+            "Jjuza kasooli 75x25cm."
+        ),
+        'rn': (
+            "Inama zo gutera: Tegura ubutaka inshuro 2 mbere yo gutera. "
+            "Koresha imbuto zemewe. Tera mu ntangiriro y'imvura. "
+            "Bane kasooli 75x25cm."
+        ),
+        'ac': (
+            "Pwony pa cibo cek: Cik ngom wiik 2 cok. "
+            "Tic ki kal ma gitic. Cib i tum me kot. "
+            "Wek kakang 75x25cm."
+        ),
+    },
+    "Pest alerts: Check for Fall Armyworm on maize. Spray neem early morning. Report outbreaks to extension officer.": {
+        'sw': (
+            "Tahadhari za wadudu: Angalia Armyworm kwenye mahindi. "
+            "Nyunyiza dawa ya mwarobaini asubuhi. "
+            "Ripoti mlipuko kwa afisa ugani."
+        ),
+        'lg': (
+            "Obulamu bw'ensowera: Noonya ensowera ku kasooli. "
+            "Siiga omuzizi gw'omuyembe mangu mu makya. "
+            "Buulira omulabirizi w'obulimi."
+        ),
+        'rn': (
+            "Amakuru y'ibyounyi: Reba ibyounyi ku kasooli. "
+            "Siga umuti w'umuyembe vuba mu gitondo. "
+            "Menyesha umujyanama w'ubuhinzi."
+        ),
+        'ac': (
+            "Lok pa kite: Rot kite i kal. "
+            "Wir yat pa oliiti odiko. "
+            "Leb labong pa jami."
+        ),
+    },
+    "Harvest advice: Harvest maize when husks are dry. Dry grain below 13% moisture. Use hermetic bags for storage.": {
+        'sw': (
+            "Ushauri wa mavuno: Vuna mahindi maganda yake yatakapokauka. "
+            "Kausha nafaka chini ya 13% unyevu. "
+            "Tumia mifuko maalum kuhifadhi."
+        ),
+        'lg': (
+            "Ebiragiro eby'okuŋŋaba: Ŋŋaba kasooli ng'empumba eyombye. "
+            "Umba emmere wansi wa 13% amaizi. "
+            "Kozesa ensawo ezizikiriza okutereka."
+        ),
+        'rn': (
+            "Inama zo gusarura: Satura kasooli amahundo gakaze. "
+            "Humeka inyabura munsi ya 13%. "
+            "Koresha amasaho yihariye yo kubika."
+        ),
+        'ac': (
+            "Pwony pa kayo cek: Kayo kal i kare ocoo oyoo. "
+            "Kang kal piny pa 13% pii. "
+            "Tic ki poto ma kite ok donyo pi meko."
+        ),
+    },
+
+    # ── Static AI fallback responses ────────────────────────────────
+    "Plant maize at start of long rains (Mar-May). Use certified seed at 75x25cm spacing. Apply CAN fertilizer 6 weeks after planting.": {
+        'sw': (
+            "Panda mahindi mwanzo wa mvua ndefu (Mar-Mei). "
+            "Tumia mbegu zilizoidhinishwa kwa nafasi ya 75x25cm. "
+            "Weka mbolea ya CAN wiki 6 baada ya kupanda."
+        ),
+        'lg': (
+            "Siga kasooli nga enkuba empanvu etandika (Mar-Mei). "
+            "Kozesa ensigo ez'eby'obuwangwa mu 75x25cm. "
+            "Teeka bbombo ya CAN wiiki 6 ng'onasiga."
+        ),
+        'rn': (
+            "Tera kasooli mu ntangiriro y'imvura ndefu (Mar-Mei). "
+            "Koresha imbuto zemewe 75x25cm. "
+            "Shyira ifumbire ya CAN inshuro 6 nyuma yo gutera."
+        ),
+        'ac': (
+            "Cib kal i tum me kot malac (Mar-Mei). "
+            "Tic ki kal ma gitic 75x25cm. "
+            "Ket mwolo pa CAN wiik 6 bang cibo."
+        ),
+    },
+    "Add compost or manure before tilling. Rotate crops each season to restore soil nutrients. Avoid burning crop residues — dig them in instead.": {
+        'sw': (
+            "Ongeza mboji au samadi kabla ya kulima. "
+            "Badilisha mazao kila msimu kurejesha virutubisho. "
+            "Usichome mabaki ya mazao — yafukuzie ardhini."
+        ),
+        'lg': (
+            "Yongeza omukuyu oba ebisaasiro nga tonnalima. "
+            "Kyusa ebimera buli season okuzzaamu emisingi. "
+            "Tolokya amasaasiro ga ebimera — biwumba mu ttaka."
+        ),
+        'rn': (
+            "Ongereza urumogi cyangwa amase mbere yo guhinga. "
+            "Hindura ibihingwa buri gihe kugira ngo ubutaka busubire. "
+            "Ntukomereze imisibo y'ibihingwa — yimike mu butaka."
+        ),
+        'ac': (
+            "Ket lubuku onyo labol ka piny pe ilimo. "
+            "Loko cek buk buk me miyo ngom odwog. "
+            "Pe wil gik ma dong i cek — por i ngom."
+        ),
+    },
+    "Apply DAP at planting (1 bag per acre). Top-dress with CAN 6 weeks later. Use urea only on well-watered soil to avoid leaf burn.": {
+        'sw': (
+            "Weka DAP wakati wa kupanda (gunia 1 kwa ekari). "
+            "Ongeza CAN wiki 6 baadaye. "
+            "Tumia urea kwenye udongo wenye maji ya kutosha."
+        ),
+        'lg': (
+            "Teeka DAP ng'osiga (musawo 1 mu ekari). "
+            "Yongeza CAN wiiki 6 oluvannyuma. "
+            "Kozesa urea ku ttaka eriko amazzi mangi."
+        ),
+        'rn': (
+            "Shyira DAP iyo utera (isaki 1 ku ekari). "
+            "Ongereza CAN inshuro 6 nyuma. "
+            "Koresha urea gusa ku butaka bufite amazi ahagije."
+        ),
+        'ac': (
+            "Ket DAP i kare cibo (poto 1 pa ekari). "
+            "Onyo CAN wiik 6 lacen. "
+            "Tic ki urea i ngom ma pii rom."
+        ),
+    },
+    "Water crops early morning to reduce evaporation. Use mulch around plants to retain soil moisture. Dig simple water channels to direct rain runoff to crops.": {
+        'sw': (
+            "Mwagilia mazao asubuhi na mapema kupunguza uvukizi. "
+            "Tumia matandazo kuzuia unyevu. "
+            "Chimba mifereji rahisi kuelekeza maji ya mvua."
+        ),
+        'lg': (
+            "Nawula ebimera mangu mu makya okukebera okubba kw'amazzi. "
+            "Kozesa ebiwumba okujjirira amaizi mu ttaka. "
+            "Kimba ensalire okukwata amazzi g'enkuba."
+        ),
+        'rn': (
+            "Hira ibihingwa vuba mu gitondo kugabanya ubushuhe. "
+            "Koresha uburembo kubika ubunyumu bw'ubutaka. "
+            "Imba imiyoboro yoroshye yo guherekeza amazi."
+        ),
+        'ac': (
+            "Wir cek odiko ma con pi cuko camo pii. "
+            "Tic ki gik ma tino pi gwoko pii i ngom. "
+            "Kim yo pii matidi pi tero pii kot i cek."
+        ),
+    },
+    "Yellow leaves may indicate nitrogen deficiency or mosaic virus. Remove affected plants and apply foliar fertilizer. Use certified disease-free seeds next season.": {
+        'sw': (
+            "Majani ya njano yanaweza kuonyesha upungufu wa nitrojeni au virusi. "
+            "Ondoa mimea iliyoathiriwa na weka mbolea ya majani. "
+            "Tumia mbegu zilizo salama msimu ujao."
+        ),
+        'lg': (
+            "Ebijanjalo eby'obuterere bisobola okutegeeza obunono bwa nitrogen oba endwadde. "
+            "Ggyamu ebimera ebikyamye okewolereze bbombo. "
+            "Kozesa ensigo zitalina ndwadde mu season ejja."
+        ),
+        'rn': (
+            "Amababi y'umuhondo ashobora kwerekana ubukene bwa azote cyangwa virus. "
+            "Kura ibihingwa byononekaye usige ifumbire ku mababi. "
+            "Koresha imbuto zidafite indwara mu gihe gikurikira."
+        ),
+        'ac': (
+            "Pot maleng twero nyuto two me nitrogen onyo tuo. "
+            "Kwar cek ma two opoto i wiye ki mwolo me pot. "
+            "Tic ki kal ma ki two i buk ma bino."
+        ),
+    },
+    "Check local weather before applying pesticides or fertilizer. Avoid planting just before heavy rains — wait 2 days. Harvest before forecast rain to protect grain quality.": {
+        'sw': (
+            "Angalia hali ya hewa kabla ya dawa au mbolea. "
+            "Epuka kupanda kabla ya mvua kubwa — subiri siku 2. "
+            "Vuna kabla ya mvua iliyotabiriwa."
+        ),
+        'lg': (
+            "Kebera obulagirizi bw'omusana nga tonnateekawo dawa oba bbombo. "
+            "Wewale okusiga mangu enkuba ennene ng'edda — linda naku 2. "
+            "Ŋŋaba nga enkuba etannajja okuggya."
+        ),
+        'rn': (
+            "Reba ikirere mbere yo gushyira imiti cyangwa ifumbire. "
+            "Irinda gutera mbere y'imvura nyinshi — tegereza iminsi 2. "
+            "Satura mbere y'imvura ihanganywaho."
+        ),
+        'ac': (
+            "Rot cua ka piny ka ki wir yat onyo mwolo. "
+            "Juk cibo cok ka kot mapol — kur nino 2. "
+            "Kayo cek ka piny ka kot ma gire obino."
+        ),
+    },
+    "Keep a simple farm diary to track planting dates and yields. Join a local farmer group to share knowledge and inputs. Contact your extension officer for free advice on your crops.": {
+        'sw': (
+            "Weka daftari rahisi la shamba kufuatilia tarehe za kupanda. "
+            "Jiunge na kikundi cha wakulima kushiriki ujuzi. "
+            "Wasiliana na afisa ugani kwa ushauri wa bure."
+        ),
+        'lg': (
+            "Tereka buku entono ey'okulima okusiga emiramwa. "
+            "Yingira mu kibiina ky'abalimi okusangira omulembe. "
+            "Kukumba omulabirizi w'obulimi okufuna ebiragiro."
+        ),
+        'rn': (
+            "Bika igitabo gito cy'ubuhinzi gukurikirana iminsi yo gutera. "
+            "Injira itsinda ry'abahinzi gusangira ubwenge. "
+            "Vugana n'umujyanama w'ubuhinzi kubona inama."
+        ),
+        'ac': (
+            "Gwok buk matidi me jami pi nongo nino me cibo. "
+            "Donyo i kal pa jo jami pi poko ni kwano. "
+            "Neng labong pa jami pi koya kel ma pe lim."
+        ),
+    },
+
     # ── System messages ─────────────────────────────────────────────
     "Thank you for using Farmer's Companion. Goodbye!": {
         'sw': "Asante kwa kutumia Farmer's Companion. Kwaheri!",
